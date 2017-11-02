@@ -55,6 +55,7 @@ class VBPR(BPR):
 		self.visual_bias = np.random.normal(size=(4096), scale=0.1)
 		self.dd_bias = 0
 
+
 	def reset_parameters(self):
 		self.__initialize_parameters()
 		self.validation_aucs = []
@@ -204,12 +205,15 @@ class VBPR(BPR):
 if __name__ == '__main__':
 	from data import Data 
 	data = Data(False)
-	vbpr = VBPR(*data.get_max())
-	train_data = data.generate_train_samples(1000000)
+	vbpr = VBPR(*data.get_max(), lr=0.0005, lr2=0.0005)
 	valid_data = data.generate_evaluation_samples(True)
 	vbpr.set_visual_data(data.get_visual_data())
 	vbpr.set_dd_dict(data.get_dd_dict())
-	vbpr.train(train_data, valid_data, 1000000)
 	fn = '../cache/VBPR_{}_{}_{}_{}_default_reg.pkl'.format(3, 3, 0.5, 0.007)
-	vbpr.save_parameters(fn)
+	vbpr.load_parameters(fn)
+	for i in range(3):
+		train_data = data.generate_train_samples(1000000)
+		vbpr.train(train_data, valid_data, 1000000)
+	import pdb; pdb.set_trace()
+	#vbpr.save_parameters(fn)
 	vbpr.plot_validation_error()

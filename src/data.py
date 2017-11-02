@@ -17,7 +17,7 @@ class Data:
 		self.item_to_artist = pkl.load(open('../data/item_to_artist.p', 'rb'))
 		self.img_nfavs_dict = pkl.load(open('../data/img_nfavs.p', 'rb'))
 		self.dd_dict = pkl.load(open('../data/dd_dict.p', 'rb'))
-
+		self.time_dict = pkl.load(open('../data/time_dict.p', 'rb'))
 		self.__clean_data()
 		self.__create_dict(create_test)
 
@@ -27,7 +27,10 @@ class Data:
 		for key in range(self.max_item):
 			if key not in self.visual_data:
 				removed_items.add(key)
-
+			else:
+				if not isinstance(self.visual_data[key][0], np.ndarray) \
+				or not self.time_dict[key]: 
+					removed_items.add(key) 
 		self.removed_items = removed_items
 
 		#--------- Clean up artist dict -------------------------#
@@ -59,6 +62,11 @@ class Data:
 
 		self.data = data
 
+		#--------- Correct the formatting ---------#
+		for key in self.visual_data:
+			self.visual_data[key] = self.visual_data[key][0]
+
+
 
 	def __clean_artist_dict(self):
 
@@ -76,9 +84,6 @@ class Data:
 			if not value:
 				self.artist_dict.pop(key)
 
-		#--------- Correct the formatting ---------#
-		for key in self.visual_data:
-			self.visual_data[key] = self.visual_data[key][0]
 
 	def __create_dict(self, create_test):
 		data = self.data 
