@@ -465,11 +465,13 @@ class BAVBPR(AVBPR):
 		user = tf.placeholder(tf.float32, shape=(None, self.n))
 
 		# New part of graph in BAVBPR: choosing between buckets.
-		E_bucket_diff_tensor = tf.convert_to_tensor(self.E,dtype=tf.float32) \
+		'''E_bucket_diff_tensor = tf.convert_to_tensor(self.E,dtype=tf.float32) \
 			-	tf.convert_to_tensor(self.E2,dtype=tf.float32)
 		vb_bucket_diff_tensor = \
 			tf.convert_to_tensor(self.visual_bias,dtype=tf.float32) -\
-			tf.convert_to_tensor(self.visual_bias2,dtype=tf.float32)
+			tf.convert_to_tensor(self.visual_bias2,dtype=tf.float32)'''
+		E_bucket_diff_tensor = tf.convert_to_tensor(self.E2,dtype=tf.float32)
+		vb_bucket_diff_tensor = tf.convert_to_tensor(self.visual_bias2,dtype=tf.float32)
 
 		encoded_b = tf.einsum('ki,lk->il', E_bucket_diff_tensor, vis_data)
 		visual_interaction_b = tf.einsum('ij,ji->i', user, encoded_b)
@@ -640,6 +642,7 @@ class BAVBPR(AVBPR):
 
 			best_subsequence = np.zeros((len(chrono_art)), dtype=int)
 			current_expert_level = np.argmax(buffer[-1,:])
+			obj_max = np.max(buffer[-1,:])
 
 			curr = -1
 			best_subsequence[-1] = current_expert_level
@@ -647,7 +650,7 @@ class BAVBPR(AVBPR):
 				current_expert_level = previous_pointers[curr, int(current_expert_level)]
 				curr -= 1
 				best_subsequence[curr] = current_expert_level
-			return best_subsequence 
+			return best_subsequence, obj_max
 
 
 
@@ -656,11 +659,12 @@ class BAVBPR(AVBPR):
 
 
 		for artist in obj:
-			if self.artist_assignments[artist] == 0: continue
 			artworks = self.artist_dict[artist]
-			best_subsequence = DP_subproblem(self.nExpertise, obj[artist], artworks)
-			self.artist_assignments[artist] = dict(zip(artworks, best_subsequence))
-	
+			best_subsequence, obj_max = DP_subproblem(self.nExpertise, obj[artist], artworks)
+			if obj_max > bucket_obj[artist]:
+				self.artist_assignments[artist] = dict(zip(artworks, best_subsequence))
+			else: 
+				self.artist_assignments[artist] = 0
 
 
 	#----- Plots and other outputs --------#
