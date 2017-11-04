@@ -730,7 +730,7 @@ class BAVBPR(AVBPR):
 		bucket0 = 0; bucket1 = 0
 		for artist in self.artist_assignments:
 			if isinstance(self.artist_assignments[artist], dict): bucket1 += 1
-		else: bucket0 += 1
+			else: bucket0 += 1
 		names = ['Bucket 0: No expertise', 'Bucket 1: Expertise']
 		plt.bar([0, 1], [bucket0, bucket1], tick_label = names)
 		plt.show()
@@ -753,7 +753,7 @@ if __name__ == '__main__':
 	from data import Data 
 	data = Data(False)
 	fn = '../cache/VBPR_3_3_0.5_0.007_default_reg.pkl'
-	bavbpr = BAVBPR(*data.get_max(), filename=fn, lr=0.0005, lr2=0.0005)
+	bavbpr = BAVBPR(*data.get_max(), filename=fn, lr=0.0005, lr2=0.000005, nExpertise=3)
 	valid_data = data.generate_evaluation_samples(True)
 	assign_triples = data.generate_assignment_triples(1)
 	bavbpr.set_visual_data(data.get_visual_data())
@@ -766,7 +766,6 @@ if __name__ == '__main__':
 		bavbpr.train(train_data, valid_data, validation_freq=1000000)
 		bavbpr.assign_classes()
 		bavbpr.validation_aucs.append(bavbpr.AUC(valid_data))
-		import pdb; pdb.set_trace()
 	import pdb; pdb.set_trace()
 	bavbpr.plot_validation_error()
 

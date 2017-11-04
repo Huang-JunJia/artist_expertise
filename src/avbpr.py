@@ -77,6 +77,7 @@ class AVBPR(VBPR):
 
 		for key in self.artist_dict:
 			artworks = self.artist_dict[key]
+			import pdb; pdb.set_trace()
 			div = math.ceil(float(len(artworks))/self.nExpertise) 
 			expertise = [int(i/div) for i, x in enumerate(artworks)]
 			artist_assignments[key] = dict(zip(artworks, expertise))
