@@ -2,6 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import math
 import warnings
+import itertools 
 
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -56,6 +57,14 @@ class AVBPR(VBPR):
 		self.artist_dict, self.item_to_artist, self.img_nfavs_dict = \
 			artist_dict, item_to_artist, img_nfavs_dict
 
+	def set_data_dicts(self, train, valid, test, removed):
+		self.train_dict = train
+		self.valid_dict= valid
+		self.test_dict = test
+		self.removed_items = removed
+
+	#-----------------------------#
+
 	def __initialize_parameters(self, filename):
 		
 		self.item_biases, self.latent_items, self.latent_users, \
@@ -69,19 +78,99 @@ class AVBPR(VBPR):
 		self.vb_delta = np.zeros(shape=(4096, self.nExpertise))
 
 		'''Per-factor scaling'''
-		self.E_w = np.zeros(shape=(self.n, self.nExpertise))
-		self.vb_w = np.zeros(shape=(4096, self.nExpertise))
+		self.E_w = np.ones(shape=(self.n, self.nExpertise))*0.01
+		self.vb_w = np.ones(shape=(4096, self.nExpertise))*0.01
 
 	def initialize_assignments(self):
 		artist_assignments = {}
-
+		artwork_assignments = {}
 		for key in self.artist_dict:
 			artworks = self.artist_dict[key]
-			import pdb; pdb.set_trace()
 			div = math.ceil(float(len(artworks))/self.nExpertise) 
 			expertise = [int(i/div) for i, x in enumerate(artworks)]
 			artist_assignments[key] = dict(zip(artworks, expertise))
+
+			for art, level in zip(artworks, expertise):
+				artwork_assignments[art] = level
 		self.artist_assignments = artist_assignments	
+		self.artwork_assignments = artwork_assignments
+
+
+
+	def initialize_assignments2(self):
+		artist_assignments = {}
+		artwork_assignments = {}
+
+		for key in self.artist_dict:
+			artworks = self.artist_dict[key]
+			nFavs = [self.img_nfavs_dict[x] for x in artworks]
+			expertise = []; curr = 0
+			for artwork in artworks:
+				if curr < 1 and self.img_nfavs_dict[artwork] > 120:
+					curr = 1
+
+				if curr < 2 and self.img_nfavs_dict[artwork] > 250:
+					curr = 2
+
+				'''if curr < 3 and self.img_nfavs_dict[artwork] > 600:
+					curr = 3
+
+				if curr < 4 and self.img_nfavs_dict[artwork] > 1200:
+					curr = 4'''
+				artwork_assignments[artwork] = curr
+				expertise.append(curr)
+			artist_assignments[key] = dict(zip(artworks, expertise))
+
+		self.artist_assignments = artist_assignments
+		self.artwork_assignments = artwork_assignments
+
+
+	def generate_data(self, nSamples=1000000):
+		#-------- Create local variables for convenience and brevity ------#
+		train = self.train_dict
+		valid = self.valid_dict
+		test = self.test_dict
+
+		removed_items = self.removed_items
+		max_item = self.max_item
+
+		artwork_assignments = self.artwork_assignments
+		#------------------------------------------------------------------#
+
+		samples = np.zeros((nSamples, 3), dtype=int)
+		keys = list(train.keys())
+		users = np.random.choice(keys, nSamples) 
+		samples[:, 0] = users
+
+		for i, user in enumerate(users):
+			rated_items = train[user]
+			valid_item = valid[user]
+
+			if test: test_item = test[user]
+			else: test_item = None
+
+			rated_item = np.random.choice(rated_items)
+			rated_bucket = artwork_assignments[rated_item]
+			unrated_item = np.random.choice(max_item)
+			if unrated_item in artwork_assignments:
+				unrated_bucket = artwork_assignments[unrated_item]
+			else:
+				unrated_bucket = -1
+
+			while unrated_item in rated_items or unrated_item in removed_items \
+				or unrated_item == valid_item or unrated_item == test_item or \
+				rated_bucket != unrated_bucket:
+
+				unrated_item = np.random.choice(max_item)
+				if unrated_item in artwork_assignments:
+					unrated_bucket = artwork_assignments[unrated_item]
+				else:
+					unrated_bucket = -1
+			samples[i, 1] = rated_item
+			samples[i, 2] = unrated_item
+
+		return samples
+	
 
 	#================ Implementation details ================#
 
@@ -97,15 +186,14 @@ class AVBPR(VBPR):
 		rated_visual_bias = np.dot(rated_vf, rated_vb)
 		unrated_visual_bias = np.dot(unrated_vf, unrated_vb)
 		visual_bias_difference = rated_visual_bias - unrated_visual_bias
-
 		return (bias_difference + latent_difference + visual_difference \
 			+ visual_bias_difference + dd_difference)
 	
 
 	def AUC(self, samples):
-
 		auc = 0.0
 		for user, rated_item, unrated_item in tqdm(samples):
+
 
 			# Extract out the relevant variables
 			rated_item_bias = self.item_biases[rated_item]
@@ -209,7 +297,6 @@ class AVBPR(VBPR):
 			rated_expertise_level = self.artist_assignments[rated_artist][rated_item]
 			unrated_expertise_level = self.artist_assignments[unrated_artist][unrated_item]
 
-			
 			'''The encoding matrix part has three parts:
 				1) The baseline model E
 				2) The per-factor weights E_w 
@@ -222,7 +309,7 @@ class AVBPR(VBPR):
 			try:
 				rated_encoded_sum = np.multiply(rated_E_w, rated_encoded)+\
 							rated_delta_encoded
-			except RuntimeWarning: import pdb; pdb.set_trace()
+			except: import pdb; pdb.set_trace()
 
 			unrated_E_delta = self.E_delta[:,:,unrated_expertise_level]
 			unrated_E_w = self.E_w[:,unrated_expertise_level]
@@ -425,14 +512,21 @@ class AVBPR(VBPR):
 		vis_data = tf.placeholder(tf.float32, shape=(None, 4096))
 		user = tf.placeholder(tf.float32, shape=(None, self.n))
 
-		visual_bias_tensor = tf.convert_to_tensor(self.vb_delta, dtype=tf.float32)
-		E_tensor = tf.convert_to_tensor(self.E_delta, dtype=tf.float32)
+		visual_bias_tensor = tf.convert_to_tensor(self.visual_bias, dtype=tf.float32)
+		vb_delta_tensor = tf.convert_to_tensor(self.vb_delta, dtype=tf.float32)
+		vb_w_tensor = tf.convert_to_tensor(self.vb_w, dtype=tf.float32)
+		E_delta_tensor = tf.convert_to_tensor(self.E_delta, dtype=tf.float32)
+		E_tensor = tf.convert_to_tensor(self.E, dtype=tf.float32)
+		E_w_tensor = tf.convert_to_tensor(self.E_w, dtype=tf.float32)
 
+		encoded = tf.einsum('ki,lk->il', E_tensor, vis_data)
+		encoded = tf.einsum('ij,ik->jik', E_w_tensor, encoded)
+		encoded_delta = tf.einsum('kji,lk->ijl', E_delta_tensor, vis_data)
+		full_encoded = encoded+encoded_delta
+		visual_interaction = tf.einsum('ij,kji->ik', user, full_encoded)
 
-		encoded = tf.einsum('kji,lk->ijl', E_tensor, vis_data)
-		visual_interaction = tf.einsum('ij,kji->ik', user, encoded)
-
-		vis_bias = tf.matmul(vis_data, visual_bias_tensor)
+		full_visual_bias = vb_delta_tensor + tf.einsum('ij,i->ij', vb_w_tensor, visual_bias_tensor)
+		vis_bias = tf.matmul(vis_data, full_visual_bias)
 		obj = visual_interaction + vis_bias
 
 		sess = tf.Session()
@@ -530,6 +624,8 @@ class AVBPR(VBPR):
 				current_expert_level = previous_pointers[curr, int(current_expert_level)]
 				curr -= 1
 				best_subsequence[curr] = current_expert_level
+			for art, level in zip(chrono_art, best_subsequence):
+				self.artwork_assignments[art] = level
 			return best_subsequence 
 
 
@@ -596,24 +692,91 @@ class AVBPR(VBPR):
 			if i == 20: break
 		plt.show()
 
-if __name__ == '__main__':
+	def progression_stats(self):
+		possible_choices = range(self.nExpertise)
+		results = {}
+		for i in range(1, self.nExpertise+1):
+			curr = list(itertools.combinations(possible_choices, i))
+			for sublist in curr:
+				results[sublist] = 0
 
+		for artist in self.artist_assignments:
+			curr_assignments = self.artist_assignments[artist]
+			vals = list(curr_assignments.values())
+			for key in results:
+				if set(key).issubset(vals): results[key]+=1
+
+		for key in results:
+			print('For {}, count is {}'.format(key, results[key]))
+
+
+	def visualize_artists_scheme(self, wanted_items, unwanted_items):
+		artists = list(self.artist_assignments.keys())
+		np.random.shuffle(artists)
+		
+		i = 0 
+		fig, axes = plt.subplots(nrows=5, ncols=2, figsize = (15,15))
+
+		for artist in artists:
+			curr_assignments = self.artist_assignments[artist]
+			vals = list(curr_assignments.values())
+			x = self.artist_dict[artist]
+			ratings = [(self.img_nfavs_dict[img]) for img in x]
+			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
+
+			if not set(wanted_items).issubset(vals): continue
+			if set(unwanted_items).intersection(vals): continue
+			axes[i%5, int(i/5)].scatter(range(len(y)), ratings, c=vals)
+			i += 1
+			if i == 10: break
+
+		plt.show()
+
+	def powerset_mean(self, wanted_items, unwanted_items):
+		artists = list(self.artist_assignments.keys())
+		results = []
+
+		for artist in artists:
+			curr_assignments = self.artist_assignments[artist]
+			vals = list(curr_assignments.values())
+			x = self.artist_dict[artist]
+			ratings = [(self.img_nfavs_dict[img]) for img in x]
+
+			if not set(wanted_items).issubset(vals): continue
+			if set(unwanted_items).intersection(vals): continue
+
+			results.append(np.mean(ratings))
+		
+		print ('Average nFavs for this scheme is {}'.format(np.mean(results)))
+
+
+if __name__ == '__main__':
+	plt.ion()
 	from data import Data 
-	data = Data(False)
-	fn = '../cache/VBPR_3_3_0.5_0.007_default_reg.pkl'
-	avbpr = AVBPR(*data.get_max(), filename=fn, lr=0.0005, lr2=0.0005)
+	data = Data(False, False, 100)
+	hard_data = Data(False, True, 50)
+
+	fn = '../cache/VBPR_{}_{}_{}_{}_default_reg.pkl'.format(3, 3, 0.5, 0.007, 'hard')
+	avbpr = AVBPR(*data.get_max(), filename=fn, lr=0.0005, lr2=0.000005,
+			k=3, n=3, nExpertise=3, lam_vf=10, lam_E=10, lam_vu=10)
 	valid_data = data.generate_evaluation_samples(True)
 	assign_triples = data.generate_assignment_triples(1)
 	avbpr.set_visual_data(data.get_visual_data())
+	avbpr.set_data_dicts(*data.get_data_dicts())
 	avbpr.set_dd_dict(data.get_dd_dict())
 	avbpr.set_assignment_triples(assign_triples)
 	avbpr.set_dicts(*data.get_artist_dicts())
-	avbpr.initialize_assignments()
+	avbpr.initialize_assignments2()
+	avbpr.hard_valid_aucs = []
+	hard_valid_data = hard_data.generate_evaluation_samples(True)
 	for i in range(3):
-		train_data = data.generate_train_samples(1000000)
+		train_data = avbpr.generate_data()
 		avbpr.train(train_data, valid_data, validation_freq=1000000)
+		avbpr.hard_valid_aucs.append(avbpr.AUC(hard_valid_data))
 		avbpr.assign_classes()
 		avbpr.validation_aucs.append(avbpr.AUC(valid_data))
+		avbpr.hard_valid_aucs.append(avbpr.AUC(hard_valid_data))
+
 
 	import pdb; pdb.set_trace()
 	avbpr.plot_validation_error()

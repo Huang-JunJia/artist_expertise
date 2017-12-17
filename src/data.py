@@ -1,13 +1,15 @@
 from collections import OrderedDict
 
+import random
 import pickle as pkl
 import numpy as np
 import sys
-
+from tqdm import tqdm
 
 class Data:
 
-	def __init__(self, create_test=True):
+	def __init__(self, create_test=True, make_even=False, ndivisions=1):
+		self.make_even = make_even
 		self.data = pkl.load(open('../data/favorited_dict.p', 'rb'))
 		self.max_item, self.max_user = pkl.load(
 			open('../data/useful_stats.p', 'rb'))
@@ -20,6 +22,9 @@ class Data:
 		self.time_dict = pkl.load(open('../data/time_dict.p', 'rb'))
 		self.__clean_data()
 		self.__create_dict(create_test)
+		self.divisions = self.get_divisions(ndivisions)
+		self.__create_bucketed_data(ndivisions)
+		self.ndivisions = ndivisions
 
 	def __clean_data(self):
 		#-------- Get a list of items that were removed due to no image -----#
@@ -113,6 +118,49 @@ class Data:
 		self.test_dict = test 
 
 
+	def get_divisions(self,number):
+		nfavs_list = []
+		for key in self.artist_dict:
+			artworks = self.artist_dict[key]
+			for artwork in artworks:
+				nfavs_list.append(self.img_nfavs_dict[artwork])
+		nfavs_list.sort()
+
+		prop = 1.0/number
+		interval = prop
+		divisions = []
+		total = 0
+		for item in nfavs_list:
+			total += item
+			if total/8700533.0 > prop:
+				divisions.append(item)
+				prop += interval
+		return divisions
+
+
+
+
+
+
+	def find_bucket(self, item):
+		nfavs = self.img_nfavs_dict[item]
+		for i, division in enumerate(self.divisions):
+			if nfavs <= division:
+				return i
+		return i+1
+
+
+	def __create_bucketed_data(self, ndivisions):
+		bucketed_data = [set() for i in range(ndivisions)]
+		for key in self.train_dict:
+			rated_items = self.train_dict[key]
+			for item in rated_items:
+				if item in self.removed_items: continue
+				bucket = self.find_bucket(item)
+				bucketed_data[bucket].add(item)
+		bucketed_data = [list(x) for x in bucketed_data]
+		self.bucketed_data = bucketed_data
+
 
 	def generate_train_samples(self, nSamples=1):
 		
@@ -137,13 +185,21 @@ class Data:
 			if test: test_item = test[user]
 			else: test_item = None
 
-			unrated_item = np.random.choice(max_item)
+			rated_item = np.random.choice(rated_items)
+			random_bucket = random.randint(0,self.ndivisions-1)
+			# WHY SO SLOW
+			if self.make_even:
+				unrated_item = random.choice(self.bucketed_data[random_bucket])
+			else:
+				unrated_item = np.random.choice(max_item)
+			count = 0
 			while unrated_item in rated_items or unrated_item in removed_items \
 				or unrated_item == valid_item or unrated_item == test_item:
-				unrated_item = np.random.choice(max_item)
 
-			rated_item = np.random.choice(rated_items)
-
+				if self.make_even:
+					unrated_item = random.choice(self.bucketed_data[random_bucket])
+				else:
+					unrated_item = np.random.choice(max_item)
 			samples[i, 1] = rated_item
 			samples[i, 2] = unrated_item
 
@@ -179,10 +235,21 @@ class Data:
 			valid_item = valid[user]
 			if test: test_item = test[user]
 			else: test_item = None
+			rated_item = samples[i,1]
+			random_bucket = random.randint(0,self.ndivisions-1)
 
-			unrated_item = np.random.choice(max_item)
-			while unrated_item in rated_items or unrated_item in removed_items or unrated_item == valid_item:
+			if self.make_even:
+				unrated_item = random.choice(self.bucketed_data[random_bucket])
+			else:
 				unrated_item = np.random.choice(max_item)
+
+			while unrated_item in rated_items or unrated_item in removed_items \
+				or unrated_item == valid_item or unrated_item == test_item:
+
+				if self.make_even:
+					unrated_item = random.choice(self.bucketed_data[random_bucket])
+				else:
+					unrated_item = np.random.choice(max_item)
 
 			samples[i, 2] = unrated_item
 
@@ -200,7 +267,11 @@ class Data:
 	def get_artist_dicts(self):
 		return self.artist_dict, self.item_to_artist, self.img_nfavs_dict
 
+	def get_valid_dict(self):
+		return self.valid_dict
 
+	def get_data_dicts(self):
+		return self.train_dict, self.valid_dict, self.test_dict, self.removed_items
 
 	'''
 	Creates a list of triples which will be used to get the objective for 

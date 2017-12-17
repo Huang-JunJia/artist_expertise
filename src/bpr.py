@@ -40,6 +40,7 @@ class BPR:
 	def reset_parameters(self):
 		self.__initialize_parameters()
 		self.validation_aucs = []
+
 	
 
 	#================ Implementation details ================#
@@ -123,10 +124,11 @@ class BPR:
 
 if __name__ == '__main__':
 	from data import Data 
-	data = Data()
-	bpr = BPR(*data.get_max())
-	train_data = data.generate_train_samples(500000)
-	valid_data = data.generate_evaluation_samples(True)
-
-	bpr.train(train_data, valid_data)
-	bpr.plot_validation_error()
+	data = Data(make_even=True, ndivisions=100)
+	bpr = BPR(*data.get_max(), k=10)
+	for i in range(10):
+		train_data = data.generate_train_samples(10000000)
+		valid_data = data.generate_evaluation_samples(True)
+		bpr.train(train_data, valid_data,5000000)
+	bpr.plot_validation_error(5000000)
+	import pdb; pdb.set_trace()

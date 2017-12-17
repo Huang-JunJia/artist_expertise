@@ -13,9 +13,9 @@ def sigmoid(x):
 
 class VBPR(BPR):
 
-	def __init__(self, max_item, max_user, k=3, lr=0.5, lam_u=0.01, 
-				lam_bias=0.01, lam_rated=0.01, lam_unrated=0.01,
-				lam_vf = .1, lam_E = .10, lam_vu = .10, lam_dd=0.01,
+	def __init__(self, max_item, max_user, k=3, lr=0.5, lam_u=0.1, 
+				lam_bias=0.1, lam_rated=0.1, lam_unrated=0.1,
+				lam_vf = .1, lam_E = .10, lam_vu = .10, lam_dd=0.1,
 				n=3, lr2=0.007):
 
 
@@ -55,6 +55,9 @@ class VBPR(BPR):
 		self.visual_bias = np.random.normal(size=(4096), scale=0.1)
 		self.dd_bias = 0
 
+	def update_lr(self, scale=0.1, scale2=0.1):
+		self.lr = self.lr * scale
+		self.lr2 = self.lr2 * scale2
 
 	def reset_parameters(self):
 		self.__initialize_parameters()
@@ -204,16 +207,20 @@ class VBPR(BPR):
 
 if __name__ == '__main__':
 	from data import Data 
-	data = Data(False)
-	vbpr = VBPR(*data.get_max(), lr=0.0005, lr2=0.0005)
+	data = Data(False, True, 100)
+	k=3; n=3; lr=0.1; lr2=0.001
+	vbpr = VBPR(*data.get_max(), lr=lr, lr2=lr2, k=k, n=n, 
+		lam_vf=10,lam_vu=10,lam_E=10)
 	valid_data = data.generate_evaluation_samples(True)
 	vbpr.set_visual_data(data.get_visual_data())
 	vbpr.set_dd_dict(data.get_dd_dict())
-	fn = '../cache/VBPR_{}_{}_{}_{}_default_reg.pkl'.format(3, 3, 0.5, 0.007)
-	vbpr.load_parameters(fn)
-	for i in range(3):
+
+	fn = '../cache/VBPR_{}_{}_{}_{}_default_reg.pkl'.format(3, 3, 0.5, 0.007, 'hard')
+	#vbpr.load_parameters(fn)
+	for i in range(15):
 		train_data = data.generate_train_samples(1000000)
 		vbpr.train(train_data, valid_data, 1000000)
+		#if not i%5: vbpr.update_lr(1, 0.1)
+	vbpr.save_parameters(fn)
+	vbpr.plot_validation_error(1000000)
 	import pdb; pdb.set_trace()
-	#vbpr.save_parameters(fn)
-	vbpr.plot_validation_error()

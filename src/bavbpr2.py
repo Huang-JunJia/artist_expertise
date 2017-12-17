@@ -362,47 +362,29 @@ class BAVBPR(AVBPR):
 					lr2 * rated_vb_grad
 				self.dd_bias2 = (1-lr*lam_dd)*self.dd_bias2 +lr*rated_dd_grad
 			else:
-				'''
-				Get the smoothing expertise levels
-				'''
-				if rated_expertise_level == 0:
-					smaller = rated_expertise_level; larger = rated_expertise_level + 1
-				elif rated_expertise_level == self.nExpertise-1:
-					smaller = rated_expertise_level-1; larger = rated_expertise_level
-				else:
-					smaller = rated_expertise_level-1; larger = rated_expertise_level+1
 
-				E_delta_smooth = lam_smooth * \
-					(self.E_delta[:,:,smaller] - self.E_delta[:,:,larger])
+				for i in range(self.nExpertise):
+					diff = np.abs(i - rated_expertise_level)
+					sf = 1.0/(1+diff/10)
 
-				self.E_delta[:,:,rated_expertise_level] = \
-					(1-lr2*lam_E) * self.E_delta[:,:,rated_expertise_level] \
-					+ lr2*rated_E_delta_grad - lr2*E_delta_smooth
+					self.E_delta[:,:,i] = \
+						(1-lr2*lam_E) * self.E_delta[:,:,i] \
+						+ lr2*rated_E_delta_grad*sf
+										
+					self.E_w[:,i] = (1 - lr2*lam_delta) * \
+						self.E_w[:,i]   \
+						+ lr2*rated_E_w_grad*sf
 
-				E_w_smooth = lam_smooth * \
-					(self.E_w[:,smaller] - self.E_w[:,larger])
-				
-				self.E_w[:,rated_expertise_level] = (1 - lr2*lam_delta) * \
-					self.E_w[:,rated_expertise_level]   \
-					+ lr2*rated_E_w_grad - lr2*E_w_smooth
+					self.vb_delta[:,i] = \
+						(1-lr2*lam_vf)*self.vb_delta[:,i] + \
+						lr2*rated_vb_delta_grad*sf
+
+					self.vb_w[:,i] = \
+						(1-lr2*lam_delta) * self.vb_w[:,i] + \
+						lr2*rated_vb_w_grad*sf
+
 
 				self.E = (1 - lr2*lam_E) * self.E + lr2 * rated_E_grad
-
-				#---- Now, the VB terms -------#
-
-				vb_delta_smooth = lam_smooth * (self.vb_delta[:,smaller] - 
-							self.vb_delta[:,larger])
-
-				self.vb_delta[:,rated_expertise_level] = \
-					(1-lr2*lam_vf)*self.vb_delta[:,rated_expertise_level] + \
-					lr2*rated_vb_delta_grad - lr2*vb_delta_smooth
-
-				vb_w_smooth = lam_smooth * (self.vb_w[:,smaller] - 
-							self.vb_w[:,larger])
-
-				self.vb_w[:,rated_expertise_level] = \
-					(1-lr2*lam_delta) * self.vb_w[:,rated_expertise_level] + \
-					lr2*rated_vb_w_grad -lr2*vb_w_smooth
 
 				self.visual_bias = (1-lr2*lam_vf) * self.visual_bias + lr2 * rated_vb_grad
 			
@@ -416,57 +398,30 @@ class BAVBPR(AVBPR):
 				self.dd_bias2 = (1-lr*lam_dd)*self.dd_bias2 +lr*unrated_dd_grad
 			else:
 
-				if unrated_expertise_level == 0:
-					smaller_ = unrated_expertise_level; larger_ = unrated_expertise_level + 1
-				elif unrated_expertise_level == self.nExpertise-1:
-					smaller_ = unrated_expertise_level-1; larger_ = unrated_expertise_level
-				else:
-					smaller_ = unrated_expertise_level-1; larger_ = unrated_expertise_level+1
+				for i in range(self.nExpertise):
+					diff = np.abs(i - unrated_expertise_level)
+					sf = 1.0/(1+diff/10)
 
-				'''
-				Update the "E" terms.
-				This includes smoothing for the deltas.
-				'''
+					self.E_delta[:,:,i] = \
+						(1-lr2*lam_E) * self.E_delta[:,:,i] \
+						+ lr2*unrated_E_delta_grad*sf
+										
+					self.E_w[:,i] = (1 - lr2*lam_delta) * \
+						self.E_w[:,i]   \
+						+ lr2*unrated_E_w_grad*sf
 
-				E_delta_smooth_ = lam_smooth * \
-					(self.E_delta[:,:,smaller_] - self.E_delta[:,:,larger_])
-				
+					self.vb_delta[:,i] = \
+						(1-lr2*lam_vf)*self.vb_delta[:,i] + \
+						lr2*unrated_vb_delta_grad*sf
 
-				self.E_delta[:,:,unrated_expertise_level] = \
-					(1-lr2*lam_E) * self.E_delta[:,:,unrated_expertise_level] \
-					+ lr2*unrated_E_delta_grad - lr2*E_delta_smooth_
+					self.vb_w[:,i] = \
+						(1-lr2*lam_delta) * self.vb_w[:,i] + \
+						lr2*unrated_vb_w_grad*sf
 
 				self.E = (1 - lr2*lam_E) * self.E + lr2*unrated_E_grad
 
-				E_w_smooth_ = lam_smooth * \
-					(self.E_w[:,smaller_] - self.E_w[:,larger_])
-
-				self.E_w[:,unrated_expertise_level] = (1 - lr2*lam_delta) * \
-					self.E_w[:,unrated_expertise_level] \
-					+ lr2*unrated_E_w_grad - lr2*E_w_smooth_
-
-				'''
-				Update the visual bias terms.
-				This includes smoothing for the deltas.
-				'''
-
-
-				vb_delta_smooth_ = lam_smooth * (self.vb_delta[:,smaller_] - 
-							self.vb_delta[:,larger_])
-
-				self.vb_delta[:,unrated_expertise_level] = \
-					(1-lr2*lam_vf)*self.vb_delta[:,unrated_expertise_level] + \
-					lr2*unrated_vb_delta_grad - lr2*vb_delta_smooth_
-
 				self.visual_bias = (1-lr2*lam_vf) * self.visual_bias + lr2 * unrated_vb_grad
 				
-				vb_w_smooth_ = lam_smooth * (self.vb_w[:,smaller_] - 
-							self.vb_w[:,larger_])
-
-				self.vb_w[:,unrated_expertise_level] = \
-					(1-lr2*lam_delta) * self.vb_w[:,unrated_expertise_level] + \
-					lr2*unrated_vb_w_grad - lr2*vb_w_smooth_
-
 				'''Finally, update DD bias'''		
 				self.dd_bias[unrated_expertise_level] = \
 					(1- lr*lam_dd) * self.dd_bias[unrated_expertise_level] + lr*unrated_dd_grad
@@ -785,7 +740,7 @@ if __name__ == '__main__':
 	data = Data(False, False)
 	fn = '../cache/VBPR_3_3_0.5_0.007_default_reg.pkl'
 	bavbpr = BAVBPR(*data.get_max(), 
-		filename=fn, lr=0.0005, lr2=0.000005, nExpertise=5, lam_delta=1)
+		filename=fn, lr=0.0005, lr2=0.000005, nExpertise=5)
 	valid_data = data.generate_evaluation_samples(True)
 	assign_triples = data.generate_assignment_triples(1)
 	bavbpr.set_visual_data(data.get_visual_data())

@@ -53,6 +53,10 @@ class BAVBPR(AVBPR):
 		self.visual_bias2 = self.visual_bias[:]
 		self.dd_bias2 = self.dd_bias
 
+		self.E3 = self.E[:]
+		self.visual_bias3 = self.visual_bias[:]
+		self.dd_bias3 = self.dd_bias
+
 		'''Now for the expertise parameters'''
 
 		self.E_delta = np.zeros(shape=(4096, self.n, self.nExpertise))
@@ -60,8 +64,8 @@ class BAVBPR(AVBPR):
 		self.dd_bias = [self.dd_bias]*self.nExpertise
 
 		'''Per-factor scaling'''
-		self.E_w = np.zeros(shape=(self.n, self.nExpertise))
-		self.vb_w = np.zeros(shape=(4096, self.nExpertise))
+		self.E_w = np.ones(shape=(self.n, self.nExpertise))*0.01
+		self.vb_w = np.ones(shape=(4096, self.nExpertise))*0.01
 
 	def initialize_assignments2(self):
 		artist_assignments = {}
@@ -73,24 +77,20 @@ class BAVBPR(AVBPR):
 			'''Heuristic for beginners whose artwork don't really improve at all
 			# Mean instead of median because in this case, to emphasize these
 			# artists generally got no attention one way or another. '''
-			if np.mean(nFavs) < 50: 
+			if np.mean(nFavs) < 120: 
 				artist_assignments[key] = 0
+			elif np.mean(nFavs) > 1000: 
+				artist_assignments[key] = 1
 			else:
 				'''If the user isn't a total beginner, assume they evolve
 				through the expertise levels.'''
 				expertise = []; curr = 0
 				for artwork in artworks:
-					if curr < 1 and self.img_nfavs_dict[artwork] > 150:
+					if curr < 1 and self.img_nfavs_dict[artwork] > 1000:
 						curr = 1
 
-					if curr < 2 and self.img_nfavs_dict[artwork] > 300:
+					if curr < 2 and self.img_nfavs_dict[artwork] > 2000:
 						curr = 2
-
-					if curr < 3 and self.img_nfavs_dict[artwork] > 700:
-						curr = 3
-
-					if curr < 4 and self.img_nfavs_dict[artwork] > 1500:
-						curr = 4
 
 					expertise.append(curr)
 				artist_assignments[key] = dict(zip(artworks, expertise))
@@ -108,8 +108,10 @@ class BAVBPR(AVBPR):
 			'''Heuristic for beginners whose artwork don't really improve at all
 			# Mean instead of median because in this case, to emphasize these
 			# artists generally got no attention one way or another. '''
-			if np.mean(nFavs) < 50: 
+			if np.mean(nFavs) < 200: 
 				artist_assignments[key] = 0
+			elif np.mean(nFavs) > 1500:
+				artist_assignments[key] = 1
 			else:
 				'''If the user isn't a total beginner, assume they evolve
 				through the expertise levels.'''
@@ -150,9 +152,14 @@ class BAVBPR(AVBPR):
 			unrated_bucket = self.artist_assignments[unrated_artist]
 
 			if rated_bucket == 0:
-				rated_encoded = np.dot(np.transpose(self.E), rated_vf)
+				rated_encoded = np.dot(np.transpose(self.E2), rated_vf)
 				rated_dd = self.dd_dict[rated_item]*self.dd_bias2
 				rated_visual_bias = self.visual_bias2
+			elif rated_bucket == 1:
+				rated_encoded = np.dot(np.transpose(self.E3), rated_vf)
+				rated_dd = self.dd_dict[rated_item]*self.dd_bias3
+				rated_visual_bias = self.visual_bias3
+
 			else:
 				rated_expertise_level = \
 					self.artist_assignments[rated_artist][rated_item]
@@ -171,9 +178,14 @@ class BAVBPR(AVBPR):
 				rated_dd = self.dd_dict[rated_item]*self.dd_bias[rated_expertise_level]
 
 			if unrated_bucket == 0:
-				unrated_encoded = np.dot(np.transpose(self.E), unrated_vf)
+				unrated_encoded = np.dot(np.transpose(self.E2), unrated_vf)
 				unrated_dd = self.dd_dict[unrated_item]*self.dd_bias2
 				unrated_visual_bias = self.visual_bias2
+			elif unrated_bucket == 1:
+				unrated_encoded = np.dot(np.transpose(self.E3), unrated_vf)
+				unrated_dd = self.dd_dict[unrated_item]*self.dd_bias3
+				unrated_visual_bias = self.visual_bias3
+
 			else:
 		
 				unrated_expertise_level = \
@@ -243,6 +255,11 @@ class BAVBPR(AVBPR):
 				rated_encoded = np.dot(np.transpose(self.E2), rated_vf)
 				rated_dd = self.dd_dict[rated_item]*self.dd_bias2
 				rated_visual_bias = self.visual_bias2
+			elif rated_bucket == 1:
+				rated_encoded = np.dot(np.transpose(self.E3), rated_vf)
+				rated_dd = self.dd_dict[rated_item]*self.dd_bias3
+				rated_visual_bias = self.visual_bias3
+
 			else:
 				rated_expertise_level = \
 					self.artist_assignments[rated_artist][rated_item]
@@ -264,6 +281,11 @@ class BAVBPR(AVBPR):
 				unrated_encoded = np.dot(np.transpose(self.E2), unrated_vf)
 				unrated_dd = self.dd_dict[unrated_item]*self.dd_bias2
 				unrated_visual_bias = self.visual_bias2
+			elif unrated_bucket == 1:
+				unrated_encoded = np.dot(np.transpose(self.E3), unrated_vf)
+				unrated_dd = self.dd_dict[unrated_item]*self.dd_bias3
+				unrated_visual_bias = self.visual_bias3
+
 			else:
 		
 				unrated_expertise_level = \
@@ -301,7 +323,7 @@ class BAVBPR(AVBPR):
 			li_grad = output * latent_user
 			lu_grad = output * (latent_rated_item-latent_unrated_item)
 
-			if rated_bucket == 0:
+			if rated_bucket == 0 or rated_bucket == 1:
 				rated_E_grad = output * (np.dot(rated_vf[:,None],visual_user[None,:]))
 				rated_vb_grad = output * rated_vf
 
@@ -315,7 +337,7 @@ class BAVBPR(AVBPR):
 				rated_vb_w_grad = output * np.multiply(rated_vf, self.visual_bias)
 				rated_vb_grad = output * np.multiply(rated_vb_w, rated_vf)
 
-			if unrated_bucket == 0:
+			if unrated_bucket == 0 or unrated_bucket == 1:
 				unrated_E_grad = -output * (np.dot(rated_vf[:,None],visual_user[None,:]))
 				unrated_vb_grad = -output * unrated_vf
 			else:
@@ -346,12 +368,6 @@ class BAVBPR(AVBPR):
 
 			self.latent_users[user] = (1-lr*lam_unrated) * latent_user + lr*lu_grad
 
-			# Extract out a couple terms.
-			E2 = self.E2 
-			visual_bias2 = self.visual_bias2 
-
-			E = self.E 
-			visual_bias = self.visual_bias
 
 
 			# Now, update all the rated parameters:
@@ -361,6 +377,12 @@ class BAVBPR(AVBPR):
 				self.visual_bias2 = (1-lr2*lam_vf)*self.visual_bias2 + \
 					lr2 * rated_vb_grad
 				self.dd_bias2 = (1-lr*lam_dd)*self.dd_bias2 +lr*rated_dd_grad
+			elif rated_bucket == 1:
+				self.E3 = (1-lr2*lam_E)*self.E3 + lr2 * rated_E_grad
+				self.visual_bias3 = (1-lr2*lam_vf)*self.visual_bias3 + \
+					lr2 * rated_vb_grad
+				self.dd_bias3 = (1-lr*lam_dd)*self.dd_bias3 +lr*rated_dd_grad
+
 			else:
 				'''
 				Get the smoothing expertise levels
@@ -414,6 +436,12 @@ class BAVBPR(AVBPR):
 				self.visual_bias2 = (1-lr2*lam_vf)*self.visual_bias2 + \
 					lr2 * unrated_vb_grad
 				self.dd_bias2 = (1-lr*lam_dd)*self.dd_bias2 +lr*unrated_dd_grad
+			elif unrated_bucket == 1:
+				self.E3 = (1-lr2*lam_E)*self.E3 + lr2 * unrated_E_grad
+				self.visual_bias3 = (1-lr2*lam_vf)*self.visual_bias3 + \
+					lr2 * unrated_vb_grad
+				self.dd_bias3 = (1-lr*lam_dd)*self.dd_bias3 +lr*unrated_dd_grad
+
 			else:
 
 				if unrated_expertise_level == 0:
@@ -484,7 +512,7 @@ class BAVBPR(AVBPR):
 
 
 
-	def get_bucket_objective(self, full_samples, batch_size=200):
+	def get_bucket_objective(self, full_samples, E, vb, batch_size=200):
 		item_to_artist = self.item_to_artist;
 		visual_users = self.visual_users
 		visual_data = self.visual_data
@@ -501,8 +529,8 @@ class BAVBPR(AVBPR):
 		user = tf.placeholder(tf.float32, shape=(None, self.n))
 
 		# New part of graph in BAVBPR: choosing between buckets.
-		E_bucket_diff_tensor = tf.convert_to_tensor(self.E2,dtype=tf.float32)
-		vb_bucket_diff_tensor = tf.convert_to_tensor(self.visual_bias2,dtype=tf.float32)
+		E_bucket_diff_tensor = tf.convert_to_tensor(E,dtype=tf.float32)
+		vb_bucket_diff_tensor = tf.convert_to_tensor(vb,dtype=tf.float32)
 
 		encoded_b = tf.einsum('ki,lk->il', E_bucket_diff_tensor, vis_data)
 		visual_interaction_b = tf.einsum('ij,ji->i', user, encoded_b)
@@ -574,14 +602,21 @@ class BAVBPR(AVBPR):
 		vis_data = tf.placeholder(tf.float32, shape=(None, 4096))
 		user = tf.placeholder(tf.float32, shape=(None, self.n))
 
-		visual_bias_tensor = tf.convert_to_tensor(self.vb_delta, dtype=tf.float32)
-		E_tensor = tf.convert_to_tensor(self.E_delta, dtype=tf.float32)
+		visual_bias_tensor = tf.convert_to_tensor(self.visual_bias, dtype=tf.float32)
+		vb_delta_tensor = tf.convert_to_tensor(self.vb_delta, dtype=tf.float32)
+		vb_w_tensor = tf.convert_to_tensor(self.vb_w, dtype=tf.float32)
+		E_delta_tensor = tf.convert_to_tensor(self.E_delta, dtype=tf.float32)
+		E_tensor = tf.convert_to_tensor(self.E, dtype=tf.float32)
+		E_w_tensor = tf.convert_to_tensor(self.E_w, dtype=tf.float32)
 
+		encoded = tf.einsum('ki,lk->il', E_tensor, vis_data)
+		encoded = tf.einsum('ij,ik->jik', E_w_tensor, encoded)
+		encoded_delta = tf.einsum('kji,lk->ijl', E_delta_tensor, vis_data)
+		full_encoded = encoded+encoded_delta
+		visual_interaction = tf.einsum('ij,kji->ik', user, full_encoded)
 
-		encoded = tf.einsum('kji,lk->ijl', E_tensor, vis_data)
-		visual_interaction = tf.einsum('ij,kji->ik', user, encoded)
-
-		vis_bias = tf.matmul(vis_data, visual_bias_tensor)
+		full_visual_bias = vb_delta_tensor + tf.einsum('ij,i->ij', vb_w_tensor, visual_bias_tensor)
+		vis_bias = tf.matmul(vis_data, full_visual_bias)
 		obj = visual_interaction + vis_bias
 
 		sess = tf.Session()
@@ -685,17 +720,22 @@ class BAVBPR(AVBPR):
 
 
 
-		bucket_obj = self.get_bucket_objective(self.assign_triples)
+		bucket_obj1 = self.get_bucket_objective(self.assign_triples, self.E2, self.visual_bias2)
+		bucket_obj2 = self.get_bucket_objective(self.assign_triples, self.E3, self.visual_bias3)
 		obj = self.get_assignment_objective(assign_triples) #returns a dict of dicts of objectives for each artwork form each artist
 
 
 		for artist in obj:
 			artworks = self.artist_dict[artist]
 			best_subsequence, obj_max = DP_subproblem(self.nExpertise, obj[artist], artworks)
-			if obj_max > bucket_obj[artist]:
+			if obj_max > bucket_obj1[artist] and obj_max > bucket_obj2[artist]:
 				self.artist_assignments[artist] = dict(zip(artworks, best_subsequence))
 			else: 
-				self.artist_assignments[artist] = 0
+				if bucket_obj1[artist] > bucket_obj2[artist]:
+					self.artist_assignments[artist] = 0
+				else:
+					self.artist_assignments[artist] = 1
+
 
 
 	#----- Plots and other outputs --------#
@@ -708,25 +748,6 @@ class BAVBPR(AVBPR):
 
 		mylist = [item for sublist in mylist for item in sublist]
 		plt.hist(mylist)
-		plt.show()
-
-
-
-	def plot_user_expertise_progression(self):
-		i = 0 
-		fig, axes = plt.subplots(nrows=10, ncols=2, figsize = (15,15))
-		keys = list(self.artist_assignments.keys())
-		np.random.shuffle(keys)
-		for artist in keys:
-			curr_assignments = self.artist_assignments[artist]
-			if not isinstance(curr_assignments, dict): continue
-			vals = list(curr_assignments.values())
-			x = self.artist_dict[artist]
-			ratings = [(self.img_nfavs_dict[img]) for img in x]
-			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
-			axes[i%10, int(i/10)].scatter(range(len(y)), y, c=vals)
-			i += 1
-			if i == 20: break
 		plt.show()
 
 
@@ -756,27 +777,109 @@ class BAVBPR(AVBPR):
 			print("Average nFavs for level {} is {}".format(i, [avg, avg2]))
 
 
+
+
+	def plot_user_expertise_progression(self):
+		i = 0 
+		fig, axes = plt.subplots(nrows=10, ncols=2, figsize = (15,15))
+		keys = list(self.artist_assignments.keys())
+		np.random.shuffle(keys)
+		for artist in keys:
+			curr_assignments = self.artist_assignments[artist]
+			if not isinstance(curr_assignments, dict): continue
+			vals = list(curr_assignments.values())
+			x = self.artist_dict[artist]
+			ratings = [(self.img_nfavs_dict[img]) for img in x]
+			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
+			axes[i%10, int(i/10)].scatter(range(len(y)), ratings, c=vals)
+			i += 1
+			if i == 20: break
+		plt.show()
+
+
+	def plot_user_expertise_progression_log(self):
+		i = 0 
+		fig, axes = plt.subplots(nrows=10, ncols=2, figsize = (15,15))
+		keys = list(self.artist_assignments.keys())
+		np.random.shuffle(keys)
+		for artist in keys:
+			curr_assignments = self.artist_assignments[artist]
+			if not isinstance(curr_assignments, dict): continue
+			vals = list(curr_assignments.values())
+			x = self.artist_dict[artist]
+			ratings = [(self.img_nfavs_dict[img]) for img in x]
+			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
+			axes[i%10, int(i/10)].scatter(range(len(y)), y, c=vals)
+			i += 1
+			if i == 20: break
+		plt.show()
+
+
+	def plot_user_bucket(self,bucket_number):
+		i = 0 
+		fig, axes = plt.subplots(nrows=5, ncols=2)
+		keys = list(self.artist_assignments.keys())
+		np.random.shuffle(keys)
+		for artist in keys:
+			curr_assignments = self.artist_assignments[artist]
+			if isinstance(curr_assignments, dict): continue
+			if curr_assignments != bucket_number: continue
+			x = self.artist_dict[artist]
+			ratings = [(self.img_nfavs_dict[img]) for img in x]
+			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
+			axes[i%10, int(i/10)].scatter(range(len(y)), ratings)
+			i += 1
+			if i == 10: break
+		plt.show()
+
+
+	def plot_user_bucket_log(self,bucket_number):
+		i = 0 
+		fig, axes = plt.subplots(nrows=5, ncols=2)
+		keys = list(self.artist_assignments.keys())
+		np.random.shuffle(keys)
+		for artist in keys:
+			curr_assignments = self.artist_assignments[artist]
+			if isinstance(curr_assignments, dict): continue
+			if curr_assignments != bucket_number: continue
+			x = self.artist_dict[artist]
+			ratings = [(self.img_nfavs_dict[img]) for img in x]
+			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
+			axes[i%10, int(i/10)].scatter(range(len(y)), y)
+			i += 1
+			if i == 10: break
+		plt.show()
+
+
+
 	def plot_bucket_counts(self):
-		pdb.set_trace()
-		bucket0 = 0; bucket1 = 0
+		bucket0 = 0; bucket1 = 0; assign = 0;
 		for artist in self.artist_assignments:
-			if isinstance(self.artist_assignments[artist], dict): bucket1 += 1
-			else: bucket0 += 1
-		names = ['Bucket 0: No expertise', 'Bucket 1: Expertise']
-		plt.bar([0, 1], [bucket0, bucket1], tick_label = names)
+			if isinstance(self.artist_assignments[artist], dict): assign += 1
+			else: 
+				if self.artist_assignments[artist] == 0:
+					bucket0 += 1
+				else:
+					bucket1 += 1
+		names = ['Bucket 0:  Beginner', 'Bucket 1: Expert', 'Progression']
+		plt.bar([0, 1, 2], [bucket0, bucket1, assign], tick_label = names)
+		print ((bucket0, bucket1, assign))
 		plt.show()
 
 	def average_per_bucket(self):
-		bucket0 = []; bucket1 = []
+		bucket0 = []; bucket1 = []; assign = []
 		for artist in self.artist_assignments:
 			artworks = self.artist_dict[artist]
 			nFavs = [self.img_nfavs_dict[x] for x in artworks]
 			if isinstance(self.artist_assignments[artist], dict): 
-				bucket1.append(np.mean(nFavs))
+				assign.append(np.mean(nFavs))
 			else: 
-				bucket0.append(np.mean(nFavs))
-		print('Average nFavs for Bucket 0 (non-expertise) is {}, Bucket 1 is {}'.format(
-				np.mean(bucket0), np.mean(bucket1)))
+				if self.artist_assignments[artist] == 0:
+					bucket0.append(np.mean(nFavs))
+				else:
+					bucket1.append(np.mean(nFavs))
+		print('Average nFavs for Bucket 0 is {}, Bucket 1 is {}, expertise is {}'.format(
+				np.mean(bucket0), np.mean(bucket1), np.mean(assign)))
 
 
 if __name__ == '__main__':
@@ -785,7 +888,7 @@ if __name__ == '__main__':
 	data = Data(False, False)
 	fn = '../cache/VBPR_3_3_0.5_0.007_default_reg.pkl'
 	bavbpr = BAVBPR(*data.get_max(), 
-		filename=fn, lr=0.0005, lr2=0.000005, nExpertise=5, lam_delta=1)
+		filename=fn, lr=0.0005, lr2=0.000005, nExpertise=3)
 	valid_data = data.generate_evaluation_samples(True)
 	assign_triples = data.generate_assignment_triples(1)
 	bavbpr.set_visual_data(data.get_visual_data())
@@ -793,7 +896,7 @@ if __name__ == '__main__':
 	bavbpr.set_assignment_triples(assign_triples)
 	bavbpr.set_dicts(*data.get_artist_dicts())
 	bavbpr.initialize_assignments2()
-	for i in range(3):
+	for i in range(10):
 		train_data = data.generate_train_samples(1000000)
 		bavbpr.train(train_data, valid_data, validation_freq=1000000)
 		bavbpr.assign_classes()
