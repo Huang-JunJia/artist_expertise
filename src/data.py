@@ -10,16 +10,24 @@ class Data:
 
 	def __init__(self, create_test=True, make_even=False, ndivisions=1):
 		self.make_even = make_even
-		self.data = pkl.load(open('../data/favorited_dict.p', 'rb'))
-		self.max_item, self.max_user = pkl.load(
-			open('../data/useful_stats.p', 'rb'))
-		self.visual_data = pkl.load(
-			open('../data/id_feature_dict_with_artist.p', 'rb'))
-		self.artist_dict = pkl.load(open('../data/artist_dict.p', 'rb'))
-		self.item_to_artist = pkl.load(open('../data/item_to_artist.p', 'rb'))
-		self.img_nfavs_dict = pkl.load(open('../data/img_nfavs.p', 'rb'))
-		self.dd_dict = pkl.load(open('../data/dd_dict.p', 'rb'))
-		self.time_dict = pkl.load(open('../data/time_dict.p', 'rb'))
+		
+		with open('../data/favorited_dict.p', 'rb') as f:
+			self.data = pkl.load(f)
+		with open('../data/useful_stats.p', 'rb') as f:
+			self.max_item, self.max_user = pkl.load(f)
+		with open('../data/id_feature_dict_with_artist.p', 'rb') as f:
+			self.visual_data = pkl.load(f)
+		with open('../data/artist_dict.p', 'rb') as f:
+			self.artist_dict = pkl.load(f)
+		with open('../data/item_to_artist.p', 'rb') as f:
+			self.item_to_artist = pkl.load(f)
+		with open('../data/img_nfavs.p', 'rb') as f:
+			self.img_nfavs_dict = pkl.load(f)
+		with open('../data/dd_dict.p', 'rb') as f:
+			self.dd_dict = pkl.load(f)
+		with open('../data/time_dict.p', 'rb') as f:
+			self.time_dict = pkl.load(f)
+
 		self.__clean_data()
 		self.__create_dict(create_test)
 		self.divisions = self.get_divisions(ndivisions)
