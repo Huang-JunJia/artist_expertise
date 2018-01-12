@@ -1,5 +1,6 @@
 import numpy as np
 from tqdm import tqdm
+from copy import deepcopy
 import math
 import warnings
 import itertools 
@@ -9,6 +10,10 @@ import tensorflow as tf
 import pickle as pkl
 from vbpr import VBPR
 
+import numpy as np
+from collections import Counter
+np.seterr(over='warn', invalid='warn')
+warnings.filterwarnings('error')
 
 def sigmoid(x):
 	if x < -709:
@@ -19,10 +24,10 @@ def sigmoid(x):
 
 class AVBPR(VBPR):
 
-	def __init__(self, max_item, max_user, filename, k=3, lr=0.0005, lam_u=0.01, 
-				lam_bias=0.01, lam_rated=0.01, lam_unrated=0.01,
-				lam_vf = .1, lam_E = .10, lam_vu = .10, lam_dd=0.01,
-				n=3, lr2=0.000005, nExpertise=5, lam_smooth=0.1, lam_delta=0.01):
+	def __init__(self, max_item, max_user, filename, k=3, lr=0.0005, lam_u=0.1, 
+				lam_bias=0.1, lam_rated=0.1, lam_unrated=0.1,
+				lam_vf = .1, lam_E = .10, lam_vu = .10, lam_dd=0.1,
+				n=3, lr2=0.000005, nExpertise=5, lam_smooth=0.1, lam_delta=0.1):
 
 		self.filename = filename 
 
@@ -35,6 +40,8 @@ class AVBPR(VBPR):
 								lam_smooth, lam_delta, nExpertise)
 
 		self.__initialize_parameters(filename)
+		self.assignments = []
+		self.average_nfavs = []
 
 	def set_hyperparameters(self, k, n, lr, lr2, lam_u, lam_bias, 
 			lam_rated, lam_unrated, lam_vf, lam_E, lam_vu, lam_dd, 
@@ -67,9 +74,10 @@ class AVBPR(VBPR):
 
 	def __initialize_parameters(self, filename):
 		
-		self.item_biases, self.latent_items, self.latent_users, \
-			self.visual_users, self.E, self.visual_bias, self.dd_bias = \
-			pkl.load(open(filename, 'rb')) 
+		with open(filename, 'rb') as f:
+			self.item_biases, self.latent_items, self.latent_users, \
+				self.visual_users, self.E, self.visual_bias, self.dd_bias = \
+				pkl.load(f) 
 
 		'''Now for the expertise parameters'''
 		self.dd_bias = [self.dd_bias]*self.nExpertise
@@ -78,8 +86,8 @@ class AVBPR(VBPR):
 		self.vb_delta = np.zeros(shape=(4096, self.nExpertise))
 
 		'''Per-factor scaling'''
-		self.E_w = np.ones(shape=(self.n, self.nExpertise))*0.01
-		self.vb_w = np.ones(shape=(4096, self.nExpertise))*0.01
+		self.E_w = np.ones(shape=(self.n, self.nExpertise))*1E-50
+		self.vb_w = np.ones(shape=(4096, self.nExpertise))*1E-50
 
 	def initialize_assignments(self):
 		artist_assignments = {}
@@ -106,10 +114,12 @@ class AVBPR(VBPR):
 			nFavs = [self.img_nfavs_dict[x] for x in artworks]
 			expertise = []; curr = 0
 			for artwork in artworks:
-				if curr < 1 and self.img_nfavs_dict[artwork] > 120:
+				#if curr < 1 and self.img_nfavs_dict[artwork] > 110:
+				curr=0 #delete me too
+				if self.img_nfavs_dict[artwork] > 25:
 					curr = 1
-
-				if curr < 2 and self.img_nfavs_dict[artwork] > 250:
+				#if curr < 2 and self.img_nfavs_dict[artwork] > 300:
+				if self.img_nfavs_dict[artwork] > 300:
 					curr = 2
 
 				'''if curr < 3 and self.img_nfavs_dict[artwork] > 600:
@@ -186,6 +196,7 @@ class AVBPR(VBPR):
 		rated_visual_bias = np.dot(rated_vf, rated_vb)
 		unrated_visual_bias = np.dot(unrated_vf, unrated_vb)
 		visual_bias_difference = rated_visual_bias - unrated_visual_bias
+		
 		return (bias_difference + latent_difference + visual_difference \
 			+ visual_bias_difference + dd_difference)
 	
@@ -268,7 +279,7 @@ class AVBPR(VBPR):
 
 	def train(self, samples, valid, validation_freq=250000):
 
-		count = 0
+		count = 1
 
 		lr = self.lr; lam_u = self.lam_u; lam_bias = self.lam_bias
 		lam_rated = self.lam_rated; lam_unrated = self.lam_unrated
@@ -306,10 +317,9 @@ class AVBPR(VBPR):
 			rated_E_w = self.E_w[:,rated_expertise_level]
 			rated_encoded = np.dot(np.transpose(self.E), rated_vf)
 			rated_delta_encoded = np.dot(np.transpose(rated_E_delta), rated_vf)
-			try:
-				rated_encoded_sum = np.multiply(rated_E_w, rated_encoded)+\
-							rated_delta_encoded
-			except: import pdb; pdb.set_trace()
+			
+			rated_encoded_sum = np.multiply(rated_E_w, rated_encoded)+\
+						rated_delta_encoded
 
 			unrated_E_delta = self.E_delta[:,:,unrated_expertise_level]
 			unrated_E_w = self.E_w[:,unrated_expertise_level]
@@ -356,7 +366,7 @@ class AVBPR(VBPR):
 			li_grad = output * latent_user
 			lu_grad = output * (latent_rated_item-latent_unrated_item)
 
-
+			'''E_delta is ok'''
 			rated_E_delta_grad = output * (
 					np.dot(rated_vf[:,None],visual_user[None,:]))
 			unrated_E_delta_grad = -output * (
@@ -387,7 +397,6 @@ class AVBPR(VBPR):
 
 
 			# ================================================
-
 
 			# Perform gradient updates
 			self.item_biases[rated_item] = (1-lr*lam_bias) * rated_item_bias + lr*ib_grad
@@ -424,10 +433,11 @@ class AVBPR(VBPR):
 				(self.E_delta[:,:,smaller] - self.E_delta[:,:,larger])
 			E_delta_smooth_ = lam_smooth * \
 				(self.E_delta[:,:,smaller_] - self.E_delta[:,:,larger_])
-			
+
 			self.E_delta[:,:,rated_expertise_level] = \
 				(1-lr2*lam_E) * rated_E_delta \
 				+ lr2*rated_E_delta_grad - lr2*E_delta_smooth
+
 
 			self.E_delta[:,:,unrated_expertise_level] = \
 				(1-lr2*lam_E) * unrated_E_delta \
@@ -441,9 +451,9 @@ class AVBPR(VBPR):
 				(self.E_w[:,smaller_] - self.E_w[:,larger_])
 
 			self.E_w[:,rated_expertise_level] = (1 - lr2*lam_delta) * rated_E_w  \
-				+ lr2*rated_E_w_grad - lr2*E_w_smooth
+				+ lr2*rated_E_w_grad #- lr2*E_w_smooth
 			self.E_w[:,unrated_expertise_level] = (1 - lr2*lam_delta) * unrated_E_w \
-				+ lr2*unrated_E_w_grad - lr2*E_w_smooth_
+				+ lr2*unrated_E_w_grad #- lr2*E_w_smooth_
 
 			'''
 			Update the visual bias terms.
@@ -473,11 +483,11 @@ class AVBPR(VBPR):
 
 			self.vb_w[:,rated_expertise_level] = \
 				(1-lr2*lam_delta) * rated_vb_w + \
-				lr2*rated_vb_w_grad -lr2*vb_w_smooth
+				lr2*rated_vb_w_grad #-lr2*vb_w_smooth
 
 			self.vb_w[:,unrated_expertise_level] = \
 				(1-lr2*lam_delta) * unrated_vb_w + \
-				lr2*unrated_vb_w_grad - lr2*vb_w_smooth_
+				lr2*unrated_vb_w_grad #- lr2*vb_w_smooth_
 
 			'''Finally, update DD bias'''		
 			self.dd_bias[rated_expertise_level] = \
@@ -492,6 +502,7 @@ class AVBPR(VBPR):
 				self.validation_aucs.append(
 					self.AUC(valid)
 				)
+
 		if len(self.validation_aucs):
 			print ('Best accuracy: {}'.format(max(self.validation_aucs)))
 
@@ -591,10 +602,10 @@ class AVBPR(VBPR):
 			previous_pointers = np.zeros((len(chrono_art), nExpertise))
 
 			for i, art_number in enumerate(chrono_art):
-				if art_number in artist_dict:
-					objs = artist_dict[art_number] 
-				else:
+				if art_number not in artist_dict or art_number in self.valid_dict:
 					objs = np.zeros(nExpertise)
+				else:
+					objs = artist_dict[art_number] 
 				for expert_level in range (0, nExpertise):
 					if i == 0:
 						buffer[i, expert_level] = objs[expert_level]
@@ -632,18 +643,24 @@ class AVBPR(VBPR):
 
 		obj = self.get_assignment_objective(self.assign_triples) #returns a dict of dicts of objectives for each artwork form each artist
 
-
+		old_assignments = deepcopy(self.artist_assignments)
+		count = 0
+		different = 0.0
 		for artist in obj:
 			artworks = self.artist_dict[artist]
 			best_subsequence = DP_subproblem(self.nExpertise, obj[artist], artworks)
 			self.artist_assignments[artist] = dict(zip(artworks, best_subsequence))
-	
+			for assignment1, assignment2 in zip(old_assignments[artist].values(), 
+										self.artist_assignments[artist].values()):
+				count += 1
+				if assignment1 != assignment2: different +=1
+		print('Proportion of artwork that changed is {}'.format(different/count))
 	#-----Plots and other informational outputs-----#
 
 	def plot_validation_error(self, validation_freq=250000):
 		super().plot_validation_error(validation_freq)
 
-	def print_average_nfavs_per_level(self):
+	def average_nfavs_per_level(self):
 		mylist = []
 		artist_assignments = self.artist_assignments
 		for artist in artist_assignments:
@@ -657,7 +674,7 @@ class AVBPR(VBPR):
 		grouped = []
 		for i in range(self.nExpertise):
 			grouped.append([x for x in mylist if x[0] == i])
-
+		temp = []
 		for i in range(self.nExpertise):
 			curr = grouped[i]
 			try:
@@ -666,6 +683,19 @@ class AVBPR(VBPR):
 			except:
 				avg = 0
 			print("Average nFavs for level {} is {}".format(i, [avg, avg2]))
+			temp.append(avg2)
+		self.average_nfavs.append(temp)
+
+	def assignments_per_level(self):
+		mylist = []
+		for artist in self.artist_assignments:
+			mylist.append(list(self.artist_assignments[artist].values()))
+
+		mylist = [item for sublist in mylist for item in sublist]
+		ctr = Counter(mylist)
+		print(dict(ctr))
+		self.assignments.append(dict(ctr))
+
 
 	def assignment_histogram(self):
 		mylist = []
@@ -676,7 +706,7 @@ class AVBPR(VBPR):
 		plt.hist(mylist)
 		plt.show()
 
-	def plot_user_expertise_progression(self):
+	def plot_user_expertise_progression(self, log=False):
 		i = 0 
 		fig, axes = plt.subplots(nrows=10, ncols=2, figsize = (15,15))
 		keys = list(self.artist_assignments.keys())
@@ -687,6 +717,7 @@ class AVBPR(VBPR):
 			x = self.artist_dict[artist]
 			ratings = [(self.img_nfavs_dict[img]) for img in x]
 			y = [np.log(self.img_nfavs_dict[img] + 1) for img in x]
+			if log: ratings=y
 			axes[i%10, int(i/10)].scatter(range(len(y)), ratings, c=vals)
 			i += 1
 			if i == 20: break
@@ -710,7 +741,7 @@ class AVBPR(VBPR):
 			print('For {}, count is {}'.format(key, results[key]))
 
 
-	def visualize_artists_scheme(self, wanted_items, unwanted_items):
+	def visualize_artists_scheme(self, wanted_items, unwanted_items, log=False):
 		artists = list(self.artist_assignments.keys())
 		np.random.shuffle(artists)
 		
@@ -726,15 +757,17 @@ class AVBPR(VBPR):
 
 			if not set(wanted_items).issubset(vals): continue
 			if set(unwanted_items).intersection(vals): continue
+			if log: ratings = y
 			axes[i%5, int(i/5)].scatter(range(len(y)), ratings, c=vals)
 			i += 1
 			if i == 10: break
 
 		plt.show()
 
-	def powerset_mean(self, wanted_items, unwanted_items):
+	def powerset_mean(self, wanted_items, unwanted_items=(), mean_of_means=False):
 		artists = list(self.artist_assignments.keys())
 		results = []
+		wanted = [[] for i in range(len(wanted_items))]
 
 		for artist in artists:
 			curr_assignments = self.artist_assignments[artist]
@@ -744,39 +777,59 @@ class AVBPR(VBPR):
 
 			if not set(wanted_items).issubset(vals): continue
 			if set(unwanted_items).intersection(vals): continue
-
+			
 			results.append(np.mean(ratings))
+			for i, el in enumerate(wanted_items):
+				temp = [rating for i, rating in enumerate(ratings) 
+					if vals[i] == el]
+				if mean_of_means:
+					wanted[i].append(temp)
+				else:
+					wanted[i].append(np.mean(temp))
 		
-		print ('Average nFavs for this scheme is {}'.format(np.mean(results)))
-
+		print ('Average nFavs for this scheme is {} for {} items'.format(np.mean(results), len(results)))
+		for i, level in enumerate(wanted):
+			if mean_of_means:
+				level = [item for sublist in level for item in sublist]
+				avg = np.mean(level)
+			else:
+				avg = np.mean(level)
+			print ('Average nfavs for {} is {}'.format(wanted_items[i], avg,))
 
 if __name__ == '__main__':
 	plt.ion()
 	from data import Data 
 	data = Data(False, False, 100)
-	hard_data = Data(False, True, 50)
+	hard_data = Data(False, True, 5)
 
-	fn = '../cache/VBPR_{}_{}_{}_{}_default_reg.pkl'.format(3, 3, 0.5, 0.007, 'hard')
-	avbpr = AVBPR(*data.get_max(), filename=fn, lr=0.0005, lr2=0.000005,
-			k=3, n=3, nExpertise=3, lam_vf=10, lam_E=10, lam_vu=10)
+	fn = '../cache/VBPR_{}_{}_{}_{}_default_reg_100.pkl'.format(3, 3, 0.5, 0.007, 'hard')
+	#fn = '../cache/VBPR_{}_{}_{}_{}_default_reg.pkl'.format(3, 3, 0.5, 0.007, 'hard')
+	#fn = '../cache/random.pkl'
+	avbpr = AVBPR(*data.get_max(), filename=fn, lr=0.00, lr2=1E-7,
+			k=3, n=3, nExpertise=5, 
+			lam_vf=.10, lam_E=.10, lam_vu=.10, lam_smooth=.10, lam_delta=.10)
 	valid_data = data.generate_evaluation_samples(True)
-	assign_triples = data.generate_assignment_triples(1)
+	assign_triples = hard_data.generate_train_samples(20000000)
 	avbpr.set_visual_data(data.get_visual_data())
 	avbpr.set_data_dicts(*data.get_data_dicts())
 	avbpr.set_dd_dict(data.get_dd_dict())
 	avbpr.set_assignment_triples(assign_triples)
 	avbpr.set_dicts(*data.get_artist_dicts())
-	avbpr.initialize_assignments2()
+	avbpr.initialize_assignments()
 	avbpr.hard_valid_aucs = []
 	hard_valid_data = hard_data.generate_evaluation_samples(True)
-	for i in range(3):
-		train_data = avbpr.generate_data()
-		avbpr.train(train_data, valid_data, validation_freq=1000000)
+	avbpr.average_nfavs_per_level()
+	avbpr.assignments_per_level()
+	for i in range(5):
+		train_data = avbpr.generate_data(5000000)
+		avbpr.train(train_data, valid_data, validation_freq=len(train_data))
 		avbpr.hard_valid_aucs.append(avbpr.AUC(hard_valid_data))
 		avbpr.assign_classes()
 		avbpr.validation_aucs.append(avbpr.AUC(valid_data))
 		avbpr.hard_valid_aucs.append(avbpr.AUC(hard_valid_data))
+		avbpr.update_lr(1, 0.5)
+		avbpr.average_nfavs_per_level()
+		avbpr.assignments_per_level()
 
-
-	import pdb; pdb.set_trace()
 	avbpr.plot_validation_error()
+	import pdb; pdb.set_trace()
